@@ -190,8 +190,11 @@ product.
 
 - AXXESS (on Vercel) cannot publish yet; it would need an IAM identity with the producer
   policy.
-- No Omnidamus flows yet. Candidates: Omnidamus booking confirmed -> AXXESS meeting/task;
-  Callismatic lead -> Omnidamus WhatsApp follow-up (blocked by Meta today).
+- Not built yet: Callismatic lead -> Omnidamus WhatsApp follow-up (blocked by Meta's
+  display-name review today), and AXXESS -> Omnidamus customer notifications. Omnidamus
+  completions become AXXESS tasks, not calendar meetings (the STILL key has `create_task` only).
+- The Omnidamus task title fix (PR #2) is covered by tests, but no live Omnidamus completion
+  has arrived since it was deployed (2026-10-29 12:54 UTC).
 - The Lambda runtime is python3.12; the tests ran on Python 3.14 locally because no 3.12
   interpreter is installed on this machine.
 - The repo is public on GitHub at [axxess-triaxis/STILL](https://github.com/axxess-triaxis/STILL)
