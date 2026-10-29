@@ -56,7 +56,7 @@ conversations become tasks in Triaxis's own AXXESS Live Beta org.
 | Omnidamus -> AXXESS (`conversation.completed.v1` -> follow-up task) | **Deployed and verified end to end 2026-10-29.** The founder sent a real WhatsApp message to the test number. The conversation completed, and STILL event `bdbca804-c1e4-50ca-a30e-f9073bc7a47f` (12:44:55 UTC) became AXXESS task `15b11f0f-a636-46ad-8022-b667344757d5` ("Omnidamus: Inbound demo request ... completed - demo_...", Pending on `/tasks`). The failure queues stayed at 0. WhatsApp replies to the customer are still blocked by Meta's display-name review. Known cosmetic issue: the task title starts with the conversation's long `context`, so the useful `demo_time` fact gets cut off at 200 characters. STILL: schema, `AxxessCompletionRule`, adapter mapping, tests (63 total). Omnidamus#3 merged as `25bf1b3` and stack `omnidamus` redeployed with `StillEventBusArn` (function LastModified 12:32:15 UTC; all other parameters unchanged). Its role has `events:PutEvents` on the `still` bus only. The WhatsApp topic still delivers to the function, and the WhatsApp Business account still points at that topic. Rollback image tag: `omnidamusfunction-06f1efc3808d-python3.12-v1` |
 | AXXESS agent API key for STILL | **Done 2026-10-29.** AXXESS Live Beta connection `f2315c70-be23-45b0-b184-679016f91c8e`: label STILL, provider anthropic (no STILL provider value exists yet), status active, capabilities exactly `["create_task"]` (PATCH response). The key is in the stack secret (version of 16:38:20 IST, 52 characters, format `axa_live_...` checked by the paste script; the value was never shown to the agent) |
 | STILL -> AXXESS half, against real resources | **Verified 2026-10-29.** `scripts/send_test_event.py` put event `bfd8eeac-f12e-5687-9c77-a51de83bb26f` at 11:10:52Z. The adapter logged `outcome: task:8c01df21-47e1-49a1-a6f7-98c86dab7e7d`. The DynamoDB record is COMPLETED, both failure queues are at 0, and the task "STILL test: delete this task once seen." shows Pending on AXXESS `/tasks` |
-| One real cross-product flow verified end to end (Callismatic -> AXXESS) | **Not done.** Needs the Callismatic change (steps 4-5 below) |
+| Real cross-product flows verified end to end | **Done 2026-10-29.** Callismatic -> AXXESS and Omnidamus -> AXXESS each produced real AXXESS tasks in production (event and task IDs in the two rows above) |
 | Omnidamus live delivery | WhatsApp sending is still blocked on Meta's display-name review. Inbound and SES receipts work, so a completion can still happen |
 
 The STILL -> AXXESS half works against real resources (see the table). Callismatic does not
@@ -190,8 +190,11 @@ product.
 
 - AXXESS (on Vercel) cannot publish yet; it would need an IAM identity with the producer
   policy.
-- No Omnidamus flows yet. Candidates: Omnidamus booking confirmed -> AXXESS meeting/task;
-  Callismatic lead -> Omnidamus WhatsApp follow-up (blocked by Meta today).
+- Not built yet: Callismatic lead -> Omnidamus WhatsApp follow-up (blocked by Meta's
+  display-name review today), and AXXESS -> Omnidamus customer notifications. Omnidamus
+  completions become AXXESS tasks, not calendar meetings (the STILL key has `create_task` only).
+- The Omnidamus task title fix (PR #2) is covered by tests, but no live Omnidamus completion
+  has arrived since it was deployed (2026-10-29 12:54 UTC).
 - The Lambda runtime is python3.12; the tests ran on Python 3.14 locally because no 3.12
   interpreter is installed on this machine.
 - The repo is public on GitHub at [axxess-triaxis/STILL](https://github.com/axxess-triaxis/STILL)
