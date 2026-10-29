@@ -20,11 +20,12 @@ the alternative considered (a direct API router) are in
 | Duplicate protection (DynamoDB, per event id) | **Built, tested** with a stubbed DynamoDB |
 | Infrastructure as code (`template.yaml`, AWS SAM) | **Built**, passes `cfn-lint` and `sam validate --lint` |
 | Deployed to AWS | **Done 2026-10-29** with the founder's go-ahead: stack `still`, ap-southeast-2, account 227214487086, CREATE_COMPLETE 10:43:47 UTC. Checked read-only afterwards: bus `still`; archive ENABLED, 30 days; rule `still-AxxessLeadRule-hm85jbYYNORD` ENABLED with the lead pattern; its target is the adapter, with 20 retries and the delivery DLQ; function Active, python3.12, x86_64, `AXXESS_MCP_URL=https://landing.triaxisventures.com/api/agents/mcp`; 2 async retries to the failure queue; DynamoDB TTL `expires_at` ENABLED; both alarms OK. No event has been sent yet |
-| Callismatic publishing events | **Not done.** Proposed change in [docs/integrations/callismatic.md](docs/integrations/callismatic.md); Callismatic repo and Lambda untouched |
+| Callismatic publishing events | **Built, PR open, not deployed:** https://github.com/axxess-triaxis/callismatic/pull/8 (141 tests pass). Production Callismatic is unchanged until it is redeployed and `STILL_EVENT_BUS_ARN` is set |
+| Omnidamus -> AXXESS (`conversation.completed.v1` -> follow-up task) | **Built, not deployed.** STILL side: schema, `AxxessCompletionRule`, adapter mapping, tests (63 total). Omnidamus side: https://github.com/axxess-triaxis/Omnidamus/pull/3 (89 tests, cfn-lint clean). Needs a STILL redeploy, then an Omnidamus redeploy with `StillEventBusArn` |
 | AXXESS agent API key for STILL | **Done 2026-10-29.** AXXESS Live Beta connection `f2315c70-be23-45b0-b184-679016f91c8e`: label STILL, provider anthropic (no STILL provider value exists yet), status active, capabilities exactly `["create_task"]` (PATCH response). The key is in the stack secret (version of 16:38:20 IST, 52 characters, format `axa_live_...` checked by the paste script; the value was never shown to the agent) |
 | STILL -> AXXESS half, against real resources | **Verified 2026-10-29.** `scripts/send_test_event.py` put event `bfd8eeac-f12e-5687-9c77-a51de83bb26f` at 11:10:52Z. The adapter logged `outcome: task:8c01df21-47e1-49a1-a6f7-98c86dab7e7d`. The DynamoDB record is COMPLETED, both failure queues are at 0, and the task "STILL test: delete this task once seen." shows Pending on AXXESS `/tasks` |
 | One real cross-product flow verified end to end (Callismatic -> AXXESS) | **Not done.** Needs the Callismatic change (steps 4-5 below) |
-| Omnidamus | Registered as a product; no events or adapter yet. WhatsApp sending is blocked on Meta's display-name review |
+| Omnidamus live delivery | WhatsApp sending is still blocked on Meta's display-name review. Inbound and SES receipts work, so a completion can still happen |
 
 The STILL -> AXXESS half works against real resources (see the table). Callismatic does not
 publish yet, so no real Callismatic lead has gone through. The AXXESS MCP endpoint at `landing.triaxisventures.com` was confirmed live on
@@ -102,7 +103,7 @@ py -m venv .venv
 sam validate --lint --region ap-southeast-2
 ```
 
-Last run (2026-10-29, Python 3.14 locally): `60 passed`; cfn-lint clean; `sam validate --lint`
+Last run (2026-10-29, Python 3.14 locally): `63 passed`; cfn-lint clean; `sam validate --lint`
 valid; `sam build --use-container` succeeded (python3.12, x86_64). Tests never use real AWS
 credentials (see `tests/conftest.py`).
 
