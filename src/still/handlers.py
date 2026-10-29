@@ -40,11 +40,16 @@ def axxess_handler(event: dict, context=None) -> dict:
     env = envelopes.from_eventbridge(event)
     ids = {"event_id": env["id"], "source": env["source"], "type": env["type"], "consumer": CONSUMER_AXXESS}
 
-    if (env["source"], env["type"]) != ("triaxis.callismatic", "lead.triaged.v1"):
+    route = (env["source"], env["type"])
+    if route == ("triaxis.callismatic", "lead.triaged.v1"):
+        if not axxess.wants_task(env["data"]):
+            log(outcome="ignored_not_actionable", **ids)
+            return {"outcome": "ignored"}
+        arguments = axxess.task_arguments
+    elif route == ("triaxis.omnidamus", "conversation.completed.v1"):
+        arguments = axxess.completion_task_arguments
+    else:
         log(outcome="ignored_unknown_type", **ids)
-        return {"outcome": "ignored"}
-    if not axxess.wants_task(env["data"]):
-        log(outcome="ignored_not_actionable", **ids)
         return {"outcome": "ignored"}
 
     store = _idempotency()
@@ -57,7 +62,7 @@ def axxess_handler(event: dict, context=None) -> dict:
         raise
 
     try:
-        payload = _axxess_client().call_tool("create_task", axxess.task_arguments(env), env["id"])
+        payload = _axxess_client().call_tool("create_task", arguments(env), env["id"])
     except axxess.AxxessError as error:
         store.release(env["id"], CONSUMER_AXXESS)
         log(outcome="failed", retryable=error.retryable, error=str(error), **ids)

@@ -104,12 +104,14 @@ Resources:
             Resource: !GetAtt DeliveryDeadLetterQueue.Arn
             Condition:
               ArnEquals:
-                aws:SourceArn: !GetAtt AxxessLeadRule.Arn
+                aws:SourceArn:
+                  - !GetAtt AxxessLeadRule.Arn
+                  - !GetAtt AxxessCompletionRule.Arn
 
   AxxessAdapterFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Description: Turns Callismatic lead events into AXXESS tasks
+      Description: Turns Callismatic lead and Omnidamus completion events into AXXESS tasks
       Handler: still.handlers.axxess_handler
       Environment:
         Variables:
@@ -171,6 +173,31 @@ Resources:
       FunctionName: !Ref AxxessAdapterFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt AxxessLeadRule.Arn
+
+  AxxessCompletionRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Completed Omnidamus conversations go to AXXESS as follow-up tasks
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source: [triaxis.omnidamus]
+        detail-type: [conversation.completed.v1]
+      Targets:
+        - Id: axxess-adapter
+          Arn: !GetAtt AxxessAdapterFunction.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 20
+            MaximumEventAgeInSeconds: 3600
+          DeadLetterConfig:
+            Arn: !GetAtt DeliveryDeadLetterQueue.Arn
+
+  AxxessCompletionInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AxxessAdapterFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AxxessCompletionRule.Arn
 
   AlarmTopic:
     Type: AWS::SNS::Topic

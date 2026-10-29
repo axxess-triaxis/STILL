@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://still.triaxisventures.com/schemas/triaxis.omnidamus/conversation.completed.v1.json",
+  "title": "Omnidamus: a customer conversation was completed",
+  "description": "data of a triaxis.omnidamus conversation.completed.v1 event, published after the conversation state is saved (src/omnidamus/service.py).",
+  "type": "object",
+  "required": ["conversation_id", "completed_at", "channel", "summary", "key_facts", "customer_phone", "receipt_sent"],
+  "additionalProperties": false,
+  "properties": {
+    "conversation_id": {"type": "string", "minLength": 1, "maxLength": 256},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "channel": {"enum": ["sms_rcs", "whatsapp", "email"], "description": "Channel of the message that closed the exchange."},
+    "context": {"type": "string", "maxLength": 2000, "description": "Why the conversation was opened, as given at start."},
+    "summary": {"type": "string", "description": "The agent's own summary of its last decision."},
+    "key_facts": {"type": "object", "additionalProperties": {"type": "string"}},
+    "customer_phone": {"type": "string", "maxLength": 64},
+    "customer_email": {"type": ["string", "null"], "maxLength": 320},
+    "receipt_sent": {"type": "boolean"}
+  }
+}

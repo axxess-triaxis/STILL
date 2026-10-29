@@ -53,6 +53,31 @@ def task_arguments(envelope: dict) -> dict:
     }
 
 
+def completion_task_arguments(envelope: dict) -> dict:
+    """create_task arguments for a triaxis.omnidamus conversation.completed.v1 envelope."""
+    data = envelope["data"]
+    facts = "; ".join(f"{k}: {v}" for k, v in data["key_facts"].items())
+    title = f"Omnidamus: {data.get('context') or 'conversation'} completed"
+    if facts:
+        title = f"{title} - {facts}"
+    if len(title) > TITLE_LIMIT:
+        title = title[: TITLE_LIMIT - 3].rstrip() + "..."
+    lines = [f"Agent summary: {data['summary'].strip()}"]
+    contact = data["customer_phone"]
+    if data.get("customer_email"):
+        contact = f"{contact}, {data['customer_email']}"
+    lines.append(f"Customer: {contact}")
+    if data["key_facts"]:
+        lines.append("Key facts:")
+        lines.extend(f"- {k}: {v}" for k, v in data["key_facts"].items())
+    lines.append(f"Receipt email sent: {'yes' if data['receipt_sent'] else 'no'}")
+    lines.append(
+        f"From Omnidamus conversation {data['conversation_id']} (closed on {data['channel']}, "
+        f"{data['completed_at']}). STILL event {envelope['id']}."
+    )
+    return {"title": title, "description": "\n".join(lines), "priority": "medium"}
+
+
 class AxxessMcpClient:
     def __init__(self, url: str, api_key: str, timeout: float = 20.0):
         if not url.startswith("https://") and not url.startswith("http://127.0.0.1"):

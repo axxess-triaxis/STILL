@@ -6,7 +6,7 @@
       "repo": "github.com/axxess-triaxis/AXXESSTRIAXIS",
       "runs_on": "Vercel (Next.js) + Supabase",
       "produces": [],
-      "consumes": ["triaxis.callismatic/lead.triaged.v1"],
+      "consumes": ["triaxis.callismatic/lead.triaged.v1", "triaxis.omnidamus/conversation.completed.v1"],
       "adapter": "still.adapters.axxess"
     },
     "callismatic": {
@@ -23,7 +23,7 @@
       "source": "triaxis.omnidamus",
       "repo": "github.com/axxess-triaxis/Omnidamus",
       "runs_on": "AWS Lambda (SAM stack omnidamus), ap-southeast-2",
-      "produces": [],
+      "produces": ["conversation.completed.v1"],
       "consumes": [],
       "adapter": null
     }

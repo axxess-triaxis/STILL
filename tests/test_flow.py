@@ -18,10 +18,10 @@ TEMPLATE = __import__("pathlib").Path(__file__).resolve().parents[1] / "template
 BUS = "arn:aws:events:ap-southeast-2:123456789012:event-bus/still"
 
 
-def rule_pattern():
+def rule_pattern(name="AxxessLeadRule"):
     template, matches = decode(str(TEMPLATE))
     assert not matches
-    return template["Resources"]["AxxessLeadRule"]["Properties"]["EventPattern"]
+    return template["Resources"][name]["Properties"]["EventPattern"]
 
 
 def matches(pattern, event):
@@ -149,3 +149,68 @@ def test_logs_carry_ids_not_personal_data(wired, capsys):
     out = capsys.readouterr().out
     assert "Daniel" not in out and "kitchen" not in out and "+1555" not in out
     assert json.loads(out.strip().splitlines()[-1])["outcome"] == "task:task-1"
+
+
+def completion_data(**overrides):
+    data = {
+        "conversation_id": "+15550002222",
+        "completed_at": "2026-10-28T16:28:12Z",
+        "channel": "whatsapp",
+        "context": "Inbound lead",
+        "summary": "Demo confirmed for tomorrow 6 pm IST.",
+        "key_facts": {"demo_time": "tomorrow, 6 pm IST"},
+        "customer_phone": "+15550002222",
+        "customer_email": "cust@example.com",
+        "receipt_sent": True,
+    }
+    data.update(overrides)
+    return data
+
+
+@pytest.fixture
+def completion(wired):
+    _, axxess, store = wired
+    events = CapturingEvents()
+
+    def deliver(data, key="+15550002222:wamid.9"):
+        emit.emit("triaxis.omnidamus", "conversation.completed.v1", data, key=key, client=events)
+        entry = events.entries[-1]
+        event = {"source": entry["Source"], "detail-type": entry["DetailType"], "detail": json.loads(entry["Detail"])}
+        if matches(rule_pattern("AxxessLeadRule"), event):
+            raise AssertionError("an Omnidamus event must not match the Callismatic lead rule")
+        if not matches(rule_pattern("AxxessCompletionRule"), event):
+            return None
+        return handlers.axxess_handler(event)
+
+    return deliver, axxess
+
+
+def test_completed_conversation_becomes_one_axxess_task(completion, capsys):
+    deliver, axxess = completion
+    assert deliver(completion_data())["outcome"].startswith("task:")
+    assert deliver(completion_data()) == {"outcome": "duplicate"}
+    [request] = axxess["requests"]
+    args = request["body"]["params"]["arguments"]
+    assert args["title"] == "Omnidamus: Inbound lead completed - demo_time: tomorrow, 6 pm IST"
+    assert "Customer: +15550002222, cust@example.com" in args["description"]
+    assert "Receipt email sent: yes" in args["description"]
+    assert args["priority"] == "medium"
+    out = capsys.readouterr().out
+    assert "+1555" not in out and "cust@" not in out
+
+
+def test_completion_without_context_or_facts_still_has_a_title(completion):
+    deliver, axxess = completion
+    deliver(completion_data(context="", key_facts={}, customer_email=None, receipt_sent=False))
+    args = axxess["requests"][0]["body"]["params"]["arguments"]
+    assert args["title"] == "Omnidamus: conversation completed"
+    assert "Customer: +15550002222\n" in args["description"]
+    assert "Receipt email sent: no" in args["description"]
+
+
+def test_invalid_completion_is_rejected(completion):
+    deliver, axxess = completion
+    from still.envelope import InvalidEvent
+    with pytest.raises(InvalidEvent):
+        deliver(completion_data(channel="fax"))
+    assert axxess["requests"] == []
