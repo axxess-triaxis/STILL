@@ -10,6 +10,38 @@ the alternative considered (a direct API router) are in
 `side-session-notes/.../STILL-design-options-2026-10-28.md`, summarized under
 [Why an event bus](#why-an-event-bus).
 
+## Where STILL fits in Triaxis Ventures
+
+This is the founder's account of the business (2026-10-29). Unless a source is linked, it is
+*Founder-stated*.
+
+- **AXXESS TRIaxis** is the product Triaxis Ventures sells: an enterprise AI operating platform
+  for regulated organizations.
+- **PORT4LLEO** automates governance, security operations, builder analysis and product
+  improvements (live at https://port4leo-sigma.vercel.app).
+- **Callismatic** automates sales, marketing and cold calls.
+- **Omnidamus** automates SMS and WhatsApp outreach and customer service.
+- **STILL** (this repo) harnesses them into one stack, so what one product learns becomes
+  work in another.
+
+**Tenant 0.** Triaxis Ventures is the dogfooded tenant on every one of these apps, AXXESS
+TRIaxis included. Tenant 0 is where the founder does QA, audits, iteration, UX testing,
+walkthroughs, and improvements driven by pilot and survey feedback. The goal is to run Triaxis
+Ventures as a roughly 80% automated startup with the founder as the human in the loop: AXXESS
+builds, sells, does customer service, QA and marketing outreach on itself, through these
+products. The intent is to make the company a repeatable, very low-cost, lean prototype of an
+AI-native startup.
+
+**Cost claim.** The founder states that every product except AXXESS TRIaxis was built at zero
+incremental cost (*Founder-stated, source artifact needed*). Known running costs are small and
+come out of AWS credits:
+- STILL is estimated at under USD 2 a month (see [Cost](#cost)).
+- Omnidamus keeps a Route 53 hosted zone at USD 0.50 a month.
+- Bedrock (Amazon Nova) is billed per token for Callismatic's fallback and Omnidamus's agent.
+
+The first STILL flows are Tenant 0 in practice: Triaxis's own Callismatic leads and Omnidamus
+conversations become tasks in Triaxis's own AXXESS Live Beta org.
+
 ## Status, said plainly
 
 | | State |
