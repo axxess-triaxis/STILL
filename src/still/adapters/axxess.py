@@ -56,13 +56,15 @@ def task_arguments(envelope: dict) -> dict:
 def completion_task_arguments(envelope: dict) -> dict:
     """create_task arguments for a triaxis.omnidamus conversation.completed.v1 envelope."""
     data = envelope["data"]
-    facts = "; ".join(f"{k}: {v}" for k, v in data["key_facts"].items())
-    title = f"Omnidamus: {data.get('context') or 'conversation'} completed"
-    if facts:
-        title = f"{title} - {facts}"
+    # The facts (e.g. demo_time) are what the founder acts on, so they lead the title.
+    # context is often a long agent instruction, so it goes in the description instead.
+    facts = "; ".join(f"{k.replace('_', ' ')}: {v}" for k, v in data["key_facts"].items())
+    title = f"Omnidamus follow-up: {facts}" if facts else "Omnidamus: conversation completed"
     if len(title) > TITLE_LIMIT:
         title = title[: TITLE_LIMIT - 3].rstrip() + "..."
     lines = [f"Agent summary: {data['summary'].strip()}"]
+    if data.get("context"):
+        lines.append(f"Conversation context: {data['context'].strip()}")
     contact = data["customer_phone"]
     if data.get("customer_email"):
         contact = f"{contact}, {data['customer_email']}"
