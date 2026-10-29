@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: still
+Version: 0.1.0
+Summary: STILL: event bus that lets Triaxis Ventures products talk to each other
+Requires-Python: >=3.12
+Requires-Dist: jsonschema==4.26.0
+Requires-Dist: rfc3339-validator==0.1.4
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: boto3; extra == "dev"
+Requires-Dist: cfn-lint; extra == "dev"

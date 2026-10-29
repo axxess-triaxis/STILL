@@ -1,0 +1,12 @@
+[project]
+name = "still"
+version = "0.1.0"
+description = "STILL: event bus that lets Triaxis Ventures products talk to each other"
+requires-python = ">=3.12"
+dependencies = ["jsonschema==4.26.0", "rfc3339-validator==0.1.4"]
+
+[project.optional-dependencies]
+dev = ["pytest", "boto3", "cfn-lint"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

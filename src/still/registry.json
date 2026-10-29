@@ -1,0 +1,31 @@
+{
+  "products": {
+    "axxess": {
+      "name": "AXXESS TRIaxis",
+      "source": "triaxis.axxess",
+      "repo": "github.com/axxess-triaxis/AXXESSTRIAXIS",
+      "runs_on": "Vercel (Next.js) + Supabase",
+      "produces": [],
+      "consumes": ["triaxis.callismatic/lead.triaged.v1"],
+      "adapter": "still.adapters.axxess"
+    },
+    "callismatic": {
+      "name": "Callismatic",
+      "source": "triaxis.callismatic",
+      "repo": "github.com/axxess-triaxis/callismatic",
+      "runs_on": "AWS Lambda, us-east-1",
+      "produces": ["lead.triaged.v1"],
+      "consumes": [],
+      "adapter": null
+    },
+    "omnidamus": {
+      "name": "Omnidamus",
+      "source": "triaxis.omnidamus",
+      "repo": "github.com/axxess-triaxis/Omnidamus",
+      "runs_on": "AWS Lambda (SAM stack omnidamus), ap-southeast-2",
+      "produces": [],
+      "consumes": [],
+      "adapter": null
+    }
+  }
+}

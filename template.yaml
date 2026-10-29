@@ -1,0 +1,233 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: STILL - event bus that lets Triaxis Ventures products talk to each other
+
+Parameters:
+  AxxessMcpUrl:
+    Type: String
+    Description: HTTPS URL of the AXXESS MCP endpoint, ending in /api/agents/mcp
+    AllowedPattern: "^https://.+/api/agents/mcp$"
+  AlarmEmail:
+    Type: String
+    Default: ""
+    Description: Optional email for alarm notifications (left empty, alarms go nowhere)
+
+Conditions:
+  HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Architectures: [x86_64]
+    MemorySize: 256
+    Timeout: 30
+    Tracing: Active
+    CodeUri: src/
+
+Resources:
+  EventBus:
+    Type: AWS::Events::EventBus
+    Properties:
+      Name: still
+
+  EventArchive:
+    Type: AWS::Events::Archive
+    Properties:
+      Description: Every STILL event, kept 30 days for replay
+      SourceArn: !GetAtt EventBus.Arn
+      RetentionDays: 30
+
+  # Products attach this to their own execution role to publish to STILL.
+  ProducerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Allows publishing events to the STILL bus
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: events:PutEvents
+            Resource: !GetAtt EventBus.Arn
+
+  IdempotencyTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  # The value is a placeholder. The founder pastes the AXXESS agent API key in
+  # the Secrets Manager console after deploy; CloudFormation never sees it.
+  AxxessApiKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: AXXESS agent API key used by the STILL AXXESS adapter
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
+  # Events EventBridge could not deliver to the adapter.
+  DeliveryDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  # Events the adapter received but failed on after its retries.
+  AdapterFailureQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  DeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues: [!Ref DeliveryDeadLetterQueue]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: events.amazonaws.com}
+            Action: sqs:SendMessage
+            Resource: !GetAtt DeliveryDeadLetterQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt AxxessLeadRule.Arn
+
+  AxxessAdapterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: Turns Callismatic lead events into AXXESS tasks
+      Handler: still.handlers.axxess_handler
+      Environment:
+        Variables:
+          AXXESS_MCP_URL: !Ref AxxessMcpUrl
+          AXXESS_API_KEY_SECRET_ARN: !Ref AxxessApiKeySecret
+          STILL_IDEMPOTENCY_TABLE: !Ref IdempotencyTable
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref AxxessApiKeySecret
+            - Effect: Allow
+              Action: [dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem]
+              Resource: !GetAtt IdempotencyTable.Arn
+            - Effect: Allow
+              Action: sqs:SendMessage
+              Resource: !GetAtt AdapterFailureQueue.Arn
+      EventInvokeConfig:
+        MaximumRetryAttempts: 2
+        MaximumEventAgeInSeconds: 3600
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt AdapterFailureQueue.Arn
+
+  AxxessAdapterLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${AxxessAdapterFunction}
+      RetentionInDays: 30
+
+  AxxessLeadRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Callismatic leads and important calls that need a decision go to AXXESS
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source: [triaxis.callismatic]
+        detail-type: [lead.triaged.v1]
+        detail:
+          data:
+            triage:
+              category: [lead, important]
+              needs_decision: [true]
+      Targets:
+        - Id: axxess-adapter
+          Arn: !GetAtt AxxessAdapterFunction.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 20
+            MaximumEventAgeInSeconds: 3600
+          DeadLetterConfig:
+            Arn: !GetAtt DeliveryDeadLetterQueue.Arn
+
+  AxxessAdapterInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AxxessAdapterFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AxxessLeadRule.Arn
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlarmEmail
+    Properties:
+      KmsMasterKeyId: alias/aws/sns
+      Subscription:
+        - Protocol: email
+          Endpoint: !Ref AlarmEmail
+
+  DeliveryDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: STILL could not deliver an event to the AXXESS adapter
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt DeliveryDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmEmail, [!Ref AlarmTopic], !Ref AWS::NoValue]
+
+  AdapterFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: The AXXESS adapter gave up on an event after retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt AdapterFailureQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 0
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmEmail, [!Ref AlarmTopic], !Ref AWS::NoValue]
+
+Outputs:
+  EventBusArn:
+    Description: Set this as STILL_EVENT_BUS_ARN in a producing product
+    Value: !GetAtt EventBus.Arn
+  ProducerPolicyArn:
+    Description: Attach to a producing product's execution role
+    Value: !Ref ProducerPolicy
+  AxxessApiKeySecretArn:
+    Description: Paste the AXXESS agent API key into this secret
+    Value: !Ref AxxessApiKeySecret
+  AxxessAdapterFunctionName:
+    Value: !Ref AxxessAdapterFunction
+  DeliveryDeadLetterQueueUrl:
+    Value: !Ref DeliveryDeadLetterQueue
+  AdapterFailureQueueUrl:
+    Value: !Ref AdapterFailureQueue

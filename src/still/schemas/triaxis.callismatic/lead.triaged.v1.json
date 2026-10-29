@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://still.triaxisventures.com/schemas/triaxis.callismatic/lead.triaged.v1.json",
+  "title": "Callismatic: a message or voicemail was triaged",
+  "description": "data of a triaxis.callismatic lead.triaged.v1 event. triage is Callismatic's CallTriage (src/callismatic/schema.py).",
+  "type": "object",
+  "required": ["source_ref", "triaged_at", "triage"],
+  "additionalProperties": false,
+  "properties": {
+    "source_ref": {"type": "string", "minLength": 1, "maxLength": 512, "description": "Callismatic's own name for the item (voicemail file or message id)."},
+    "triaged_at": {"type": "string", "format": "date-time"},
+    "channel": {"enum": ["voicemail", "sms", "whatsapp", "text", "unknown"]},
+    "caller_number": {"type": ["string", "null"], "maxLength": 32, "description": "So the founder can call back. Never logged by STILL."},
+    "triage": {
+      "type": "object",
+      "required": ["category", "summary", "key_facts", "needs_decision", "urgency"],
+      "properties": {
+        "category": {"enum": ["scam", "spam", "lead", "important", "routine"]},
+        "summary": {"type": "string", "minLength": 1},
+        "key_facts": {"type": "object", "additionalProperties": {"type": "string"}},
+        "needs_decision": {"type": "boolean"},
+        "decision_reason": {"type": ["string", "null"]},
+        "suggested_action": {"type": ["string", "null"]},
+        "callback_recommended": {"type": "boolean"},
+        "callback_task": {"type": ["string", "null"]},
+        "block_recommended": {"type": "boolean"},
+        "urgency": {"enum": ["none", "low", "medium", "high"]}
+      }
+    }
+  }
+}
