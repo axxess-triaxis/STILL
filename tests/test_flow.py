@@ -191,7 +191,8 @@ def test_completed_conversation_becomes_one_axxess_task(completion, capsys):
     assert deliver(completion_data()) == {"outcome": "duplicate"}
     [request] = axxess["requests"]
     args = request["body"]["params"]["arguments"]
-    assert args["title"] == "Omnidamus: Inbound lead completed - demo_time: tomorrow, 6 pm IST"
+    assert args["title"] == "Omnidamus follow-up: demo time: tomorrow, 6 pm IST"
+    assert "Conversation context: Inbound lead" in args["description"]
     assert "Customer: +15550002222, cust@example.com" in args["description"]
     assert "Receipt email sent: yes" in args["description"]
     assert args["priority"] == "medium"
@@ -204,8 +205,21 @@ def test_completion_without_context_or_facts_still_has_a_title(completion):
     deliver(completion_data(context="", key_facts={}, customer_email=None, receipt_sent=False))
     args = axxess["requests"][0]["body"]["params"]["arguments"]
     assert args["title"] == "Omnidamus: conversation completed"
+    assert "Conversation context" not in args["description"]
     assert "Customer: +15550002222\n" in args["description"]
     assert "Receipt email sent: no" in args["description"]
+
+
+def test_long_context_no_longer_hides_the_facts_in_the_title(completion):
+    # Regression from the first live run (2026-10-29): the title led with a ~190-character
+    # context and the 200-character cut dropped demo_time.
+    deliver, axxess = completion
+    long_context = ("Inbound demo request for Omnidamus from the Triaxis Ventures website. Help the customer "
+                    "pick a demo time, confirm it, then close the conversation with an email receipt.")
+    deliver(completion_data(context=long_context))
+    args = axxess["requests"][0]["body"]["params"]["arguments"]
+    assert args["title"] == "Omnidamus follow-up: demo time: tomorrow, 6 pm IST"
+    assert f"Conversation context: {long_context}" in args["description"]
 
 
 def test_invalid_completion_is_rejected(completion):
