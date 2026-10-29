@@ -188,11 +188,11 @@ product.
 
 ## Not done / known limits
 
-- Nothing deployed or verified live (see Status).
 - AXXESS (on Vercel) cannot publish yet; it would need an IAM identity with the producer
   policy.
 - No Omnidamus flows yet. Candidates: Omnidamus booking confirmed -> AXXESS meeting/task;
   Callismatic lead -> Omnidamus WhatsApp follow-up (blocked by Meta today).
 - The Lambda runtime is python3.12; the tests ran on Python 3.14 locally because no 3.12
   interpreter is installed on this machine.
-- No GitHub repo yet; this is a local git repo only.
+- The repo is public on GitHub at [axxess-triaxis/STILL](https://github.com/axxess-triaxis/STILL)
+  (created 2026-10-29).
