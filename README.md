@@ -188,8 +188,6 @@ product.
 
 ## Not done / known limits
 
-- Only the STILL -> AXXESS half is verified live (see Status). No real Callismatic lead or Omnidamus
-  conversation has been checked end to end yet.
 - AXXESS (on Vercel) cannot publish yet; it would need an IAM identity with the producer
   policy.
 - No Omnidamus flows yet. Candidates: Omnidamus booking confirmed -> AXXESS meeting/task;
