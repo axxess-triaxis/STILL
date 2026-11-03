@@ -21,7 +21,8 @@ BUS = "arn:aws:events:ap-southeast-2:123456789012:event-bus/still"
 def rule_pattern(name="AxxessLeadRule"):
     template, matches = decode(str(TEMPLATE))
     assert not matches
-    return template["Resources"][name]["Properties"]["EventPattern"]
+    pattern = template["Resources"][name]["Properties"]["EventPattern"]
+    return __import__("json").loads(pattern) if isinstance(pattern, str) else pattern
 
 
 def matches(pattern, event):

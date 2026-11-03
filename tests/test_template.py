@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from cfnlint.decode import decode
@@ -48,6 +49,12 @@ def test_no_wildcard_iam_resources_or_actions():
         if key in ("Resource", "Action"):
             values = value if isinstance(value, list) else [value]
             assert "*" not in values
+
+
+def test_lead_rule_matches_a_boolean_needs_decision_and_is_safe_from_yaml_conversion():
+    pattern = template()["Resources"]["AxxessLeadRule"]["Properties"]["EventPattern"]
+    assert isinstance(pattern, str)
+    assert json.loads(pattern)["detail"]["data"]["triage"]["needs_decision"] == [True]
 
 
 def test_every_event_target_has_a_dead_letter_queue_and_retry_policy():
