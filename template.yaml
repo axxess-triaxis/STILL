@@ -2,7 +2,16 @@ AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
 Description: STILL - event bus that lets Triaxis Ventures products talk to each other
 
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@2
+
 Parameters:
+  Stage:
+    Type: String
+    Default: prod
+    AllowedValues: [prod, staging]
+    Description: prod keeps the bus name still; staging uses still-staging, so both can share an account and region
   AxxessMcpUrl:
     Type: String
     Description: HTTPS URL of the AXXESS MCP endpoint, ending in /api/agents/mcp
@@ -14,6 +23,22 @@ Parameters:
 
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
+  IsProd: !Equals [!Ref Stage, prod]
+
+# Stops a staging stack being deployed against a production AXXESS endpoint, where
+# test events would create real tasks.
+Rules:
+  StagingNeverTargetsProductionAxxess:
+    RuleCondition: !Equals [!Ref Stage, staging]
+    Assertions:
+      - Assert:
+          Fn::Not:
+            - Fn::Contains:
+                - - https://landing.triaxisventures.com/api/agents/mcp
+                  - https://investor.triaxisventures.com/api/agents/mcp
+                  - https://lite.triaxisventures.com/api/agents/mcp
+                - !Ref AxxessMcpUrl
+        AssertDescription: A staging stack must not use a production AXXESS MCP URL
 
 Globals:
   Function:
@@ -27,8 +52,12 @@ Globals:
 Resources:
   EventBus:
     Type: AWS::Events::EventBus
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: One bus per stage, so staging events can never reach production rules
+        must: The prod name stays still; changing it replaces the bus and breaks every producer's STILL_EVENT_BUS_ARN
     Properties:
-      Name: still
+      Name: !If [IsProd, still, !Sub "still-${Stage}"]
 
   EventArchive:
     Type: AWS::Events::Archive
@@ -149,14 +178,12 @@ Resources:
     Properties:
       Description: Callismatic leads and important calls that need a decision go to AXXESS
       EventBusName: !Ref EventBus
-      EventPattern:
-        source: [triaxis.callismatic]
-        detail-type: [lead.triaged.v1]
-        detail:
-          data:
-            triage:
-              category: [lead, important]
-              needs_decision: [true]
+      # A JSON string, because a YAML pattern can reach EventBridge with needs_decision as the
+      # text "true", which never matches the boolean that Callismatic sends.
+      EventPattern: >-
+        {"source": ["triaxis.callismatic"],
+        "detail-type": ["lead.triaged.v1"],
+        "detail": {"data": {"triage": {"category": ["lead", "important"], "needs_decision": [true]}}}}
       Targets:
         - Id: axxess-adapter
           Arn: !GetAtt AxxessAdapterFunction.Arn

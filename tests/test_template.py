@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from cfnlint.decode import decode
@@ -21,6 +22,24 @@ def walk(node):
             yield from walk(child)
 
 
+def test_stage_defaults_to_prod_and_prod_keeps_the_bus_name():
+    value = template()
+    assert value["Parameters"]["Stage"]["Default"] == "prod"
+    assert value["Parameters"]["Stage"]["AllowedValues"] == ["prod", "staging"]
+    name = value["Resources"]["EventBus"]["Properties"]["Name"]["Fn::If"]
+    assert name[0] == "IsProd" and name[1] == "still"
+    assert name[2] == {"Fn::Sub": "still-${Stage}"}
+
+
+def test_staging_is_refused_for_every_production_axxess_url():
+    rule = template()["Rules"]["StagingNeverTargetsProductionAxxess"]
+    assert rule["RuleCondition"] == {"Fn::Equals": [{"Ref": "Stage"}, "staging"]}
+    urls, target = rule["Assertions"][0]["Assert"]["Fn::Not"][0]["Fn::Contains"]
+    assert target == {"Ref": "AxxessMcpUrl"}
+    for host in ("landing", "investor", "lite"):
+        assert f"https://{host}.triaxisventures.com/api/agents/mcp" in urls
+
+
 def test_no_em_dashes_anywhere():
     assert "—" not in TEMPLATE_PATH.read_text(encoding="utf-8")
 
@@ -30,6 +49,12 @@ def test_no_wildcard_iam_resources_or_actions():
         if key in ("Resource", "Action"):
             values = value if isinstance(value, list) else [value]
             assert "*" not in values
+
+
+def test_lead_rule_matches_a_boolean_needs_decision_and_is_safe_from_yaml_conversion():
+    pattern = template()["Resources"]["AxxessLeadRule"]["Properties"]["EventPattern"]
+    assert isinstance(pattern, str)
+    assert json.loads(pattern)["detail"]["data"]["triage"]["needs_decision"] == [True]
 
 
 def test_every_event_target_has_a_dead_letter_queue_and_retry_policy():
