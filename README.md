@@ -165,6 +165,21 @@ on this Windows x86 machine. At this volume the price difference is negligible.
 Rollback: unset `STILL_EVENT_BUS_ARN` on Callismatic (publishing stops at once);
 `sam delete --stack-name still` removes STILL. The secret is then scheduled for deletion.
 
+### Staging
+
+A second stack in the same account and region, used by the cross-product end-to-end test.
+**Not deployed yet.** `Stage` defaults to `prod`, so the existing stack keeps its bus name.
+A staging deploy is refused if `AxxessMcpUrl` is a production AXXESS endpoint.
+
+```bash
+sam deploy --region ap-southeast-2 --stack-name still-staging --capabilities CAPABILITY_IAM \
+  --resolve-s3 --tags Stage=staging \
+  --parameter-overrides Stage=staging AxxessMcpUrl=https://staging.triaxisventures.com/api/agents/mcp
+```
+
+The staging AXXESS key goes in that stack's own `AxxessApiKeySecretArn` secret, the same way as
+step 2 above.
+
 ## Cost
 
 Approximate list prices, to confirm before deploying: EventBridge custom events USD 1.00 per
