@@ -21,6 +21,24 @@ def walk(node):
             yield from walk(child)
 
 
+def test_stage_defaults_to_prod_and_prod_keeps_the_bus_name():
+    value = template()
+    assert value["Parameters"]["Stage"]["Default"] == "prod"
+    assert value["Parameters"]["Stage"]["AllowedValues"] == ["prod", "staging"]
+    name = value["Resources"]["EventBus"]["Properties"]["Name"]["Fn::If"]
+    assert name[0] == "IsProd" and name[1] == "still"
+    assert name[2] == {"Fn::Sub": "still-${Stage}"}
+
+
+def test_staging_is_refused_for_every_production_axxess_url():
+    rule = template()["Rules"]["StagingNeverTargetsProductionAxxess"]
+    assert rule["RuleCondition"] == {"Fn::Equals": [{"Ref": "Stage"}, "staging"]}
+    urls, target = rule["Assertions"][0]["Assert"]["Fn::Not"][0]["Fn::Contains"]
+    assert target == {"Ref": "AxxessMcpUrl"}
+    for host in ("landing", "investor", "lite"):
+        assert f"https://{host}.triaxisventures.com/api/agents/mcp" in urls
+
+
 def test_no_em_dashes_anywhere():
     assert "—" not in TEMPLATE_PATH.read_text(encoding="utf-8")
 
