@@ -67,13 +67,13 @@ publish yet, so no real Callismatic lead has gone through. The AXXESS MCP endpoi
 
 ```
 Callismatic (Lambda, us-east-1)
-  triage says lead/important + needs_decision
+  triage says lead, or important + needs_decision
   -> emit("triaxis.callismatic", "lead.triaged.v1")      [proposed change]
        |
        v
 EventBridge bus "still" (ap-southeast-2) --- archive (30 days, replayable)
   rule: source=triaxis.callismatic, detail-type=lead.triaged.v1,
-        category in [lead, important], needs_decision=true
+        category=lead, or category=important with needs_decision=true
        |  retries 20x / 1h, then delivery DLQ
        v
 AxxessAdapterFunction (Lambda)
