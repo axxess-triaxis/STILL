@@ -193,14 +193,15 @@ Resources:
   AxxessLeadRule:
     Type: AWS::Events::Rule
     Properties:
-      Description: Callismatic leads and important calls that need a decision go to AXXESS
+      Description: Every Callismatic lead, and important calls that need a decision, go to AXXESS
       EventBusName: !Ref EventBus
       # A JSON string, because a YAML pattern can reach EventBridge with needs_decision as the
       # text "true", which never matches the boolean that Callismatic sends.
       EventPattern: >-
         {"source": ["triaxis.callismatic"],
         "detail-type": ["lead.triaged.v1"],
-        "detail": {"data": {"triage": {"category": ["lead", "important"], "needs_decision": [true]}}}}
+        "detail": {"data": {"triage": {"$or": [{"category": ["lead"]},
+        {"category": ["important"], "needs_decision": [true]}]}}}}
       Targets:
         - Id: axxess-adapter
           Arn: !GetAtt AxxessAdapterFunction.Arn
