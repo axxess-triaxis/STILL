@@ -54,7 +54,10 @@ def test_no_wildcard_iam_resources_or_actions():
 def test_lead_rule_matches_a_boolean_needs_decision_and_is_safe_from_yaml_conversion():
     pattern = template()["Resources"]["AxxessLeadRule"]["Properties"]["EventPattern"]
     assert isinstance(pattern, str)
-    assert json.loads(pattern)["detail"]["data"]["triage"]["needs_decision"] == [True]
+    assert json.loads(pattern)["detail"]["data"]["triage"]["$or"] == [
+        {"category": ["lead"]},
+        {"category": ["important"], "needs_decision": [True]},
+    ]
 
 
 def test_every_event_target_has_a_dead_letter_queue_and_retry_policy():

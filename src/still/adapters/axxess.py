@@ -13,7 +13,6 @@ import urllib.request
 
 PRIORITY_BY_URGENCY = {"high": "high", "medium": "medium", "low": "low", "none": "low"}
 TITLE_LIMIT = 200
-ACTIONABLE_CATEGORIES = {"lead", "important"}
 
 
 class AxxessError(RuntimeError):
@@ -24,7 +23,9 @@ class AxxessError(RuntimeError):
 
 def wants_task(data: dict) -> bool:
     triage = data["triage"]
-    return triage["category"] in ACTIONABLE_CATEGORIES and triage["needs_decision"] is True
+    # Every lead becomes a task: the model often leaves needs_decision false on a real buyer,
+    # and a few extra tasks cost less than one lost lead.
+    return triage["category"] == "lead" or (triage["category"] == "important" and triage["needs_decision"] is True)
 
 
 def task_arguments(envelope: dict) -> dict:

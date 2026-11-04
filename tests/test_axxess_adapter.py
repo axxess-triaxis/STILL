@@ -13,10 +13,10 @@ def lead_envelope(**overrides):
 
 
 @pytest.mark.parametrize("category, needs_decision, expected", [
-    ("lead", True, True), ("important", True, True),
-    ("lead", False, False), ("routine", True, False), ("scam", True, False),
+    ("lead", True, True), ("lead", False, True), ("important", True, True),
+    ("important", False, False), ("routine", True, False), ("scam", True, False),
 ])
-def test_only_leads_and_important_items_needing_a_decision_become_tasks(category, needs_decision, expected):
+def test_every_lead_and_important_items_needing_a_decision_become_tasks(category, needs_decision, expected):
     assert axxess.wants_task(lead_data(category=category, needs_decision=needs_decision)) is expected
 
 
