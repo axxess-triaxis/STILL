@@ -92,3 +92,13 @@ def test_unreachable_is_retryable():
 def test_plain_http_is_refused_outside_local_tests():
     with pytest.raises(ValueError):
         AxxessMcpClient("http://example.com/api/agents/mcp", "k")
+
+
+def test_no_bypass_header_unless_configured(fake_axxess):
+    AxxessMcpClient(fake_axxess["url"], "k").call_tool("create_task", {"title": "T"}, "x")
+    assert fake_axxess["requests"][0]["bypass"] is None
+
+
+def test_bypass_header_sent_when_configured(fake_axxess):
+    AxxessMcpClient(fake_axxess["url"], "k", bypass_secret="staging-value").call_tool("create_task", {"title": "T"}, "x")
+    assert fake_axxess["requests"][0]["bypass"] == "staging-value"

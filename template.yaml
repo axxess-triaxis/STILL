@@ -24,6 +24,7 @@ Parameters:
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
   IsProd: !Equals [!Ref Stage, prod]
+  IsStaging: !Equals [!Ref Stage, staging]
 
 # Stops a staging stack being deployed against a production AXXESS endpoint, where
 # test events would create real tasks.
@@ -106,6 +107,18 @@ Resources:
         PasswordLength: 32
         ExcludePunctuation: true
 
+  # Staging only: the staging AXXESS site sits behind Vercel's deployment protection, which
+  # answers 401 before the request reaches AXXESS. Production has no such secret. The founder
+  # stores the Vercel bypass value here after deploy; CloudFormation never sees it.
+  AxxessBypassSecret:
+    Type: AWS::SecretsManager::Secret
+    Condition: IsStaging
+    Properties:
+      Description: Vercel protection bypass value for the staging AXXESS site
+      GenerateSecretString:
+        PasswordLength: 32
+        ExcludePunctuation: true
+
   # Events EventBridge could not deliver to the adapter.
   DeliveryDeadLetterQueue:
     Type: AWS::SQS::Queue
@@ -146,13 +159,17 @@ Resources:
         Variables:
           AXXESS_MCP_URL: !Ref AxxessMcpUrl
           AXXESS_API_KEY_SECRET_ARN: !Ref AxxessApiKeySecret
+          AXXESS_BYPASS_SECRET_ARN: !If [IsStaging, !Ref AxxessBypassSecret, !Ref AWS::NoValue]
           STILL_IDEMPOTENCY_TABLE: !Ref IdempotencyTable
       Policies:
         - Version: "2012-10-17"
           Statement:
             - Effect: Allow
               Action: secretsmanager:GetSecretValue
-              Resource: !Ref AxxessApiKeySecret
+              Resource: !If
+                - IsStaging
+                - [!Ref AxxessApiKeySecret, !Ref AxxessBypassSecret]
+                - [!Ref AxxessApiKeySecret]
             - Effect: Allow
               Action: [dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem]
               Resource: !GetAtt IdempotencyTable.Arn
@@ -279,6 +296,10 @@ Outputs:
   AxxessApiKeySecretArn:
     Description: Paste the AXXESS agent API key into this secret
     Value: !Ref AxxessApiKeySecret
+  AxxessBypassSecretArn:
+    Condition: IsStaging
+    Description: Store the Vercel protection bypass value for staging in this secret
+    Value: !Ref AxxessBypassSecret
   AxxessAdapterFunctionName:
     Value: !Ref AxxessAdapterFunction
   DeliveryDeadLetterQueueUrl:
