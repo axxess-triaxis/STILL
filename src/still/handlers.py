@@ -30,9 +30,11 @@ def _axxess_client() -> axxess.AxxessMcpClient:
     if "axxess" not in _cache:
         import boto3
 
-        secret = boto3.client("secretsmanager").get_secret_value(
-            SecretId=os.environ["AXXESS_API_KEY_SECRET_ARN"])["SecretString"]
-        _cache["axxess"] = axxess.AxxessMcpClient(os.environ["AXXESS_MCP_URL"], secret.strip())
+        secrets = boto3.client("secretsmanager")
+        secret = secrets.get_secret_value(SecretId=os.environ["AXXESS_API_KEY_SECRET_ARN"])["SecretString"]
+        bypass_arn = os.environ.get("AXXESS_BYPASS_SECRET_ARN")
+        bypass = secrets.get_secret_value(SecretId=bypass_arn)["SecretString"].strip() if bypass_arn else None
+        _cache["axxess"] = axxess.AxxessMcpClient(os.environ["AXXESS_MCP_URL"], secret.strip(), bypass_secret=bypass)
     return _cache["axxess"]
 
 

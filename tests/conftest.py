@@ -55,7 +55,8 @@ def fake_axxess():
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            state["requests"].append({"auth": self.headers.get("Authorization"), "body": body})
+            state["requests"].append({"auth": self.headers.get("Authorization"), "body": body,
+                                      "bypass": self.headers.get("x-vercel-protection-bypass")})
             if state["status"] != 200:
                 self.send_response(state["status"])
                 self.end_headers()

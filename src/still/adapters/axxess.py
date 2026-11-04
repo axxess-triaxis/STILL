@@ -81,12 +81,13 @@ def completion_task_arguments(envelope: dict) -> dict:
 
 
 class AxxessMcpClient:
-    def __init__(self, url: str, api_key: str, timeout: float = 20.0):
+    def __init__(self, url: str, api_key: str, timeout: float = 20.0, bypass_secret: str | None = None):
         if not url.startswith("https://") and not url.startswith("http://127.0.0.1"):
             raise ValueError("AXXESS MCP URL must be https")
         self.url = url
         self.api_key = api_key
         self.timeout = timeout
+        self.bypass_secret = bypass_secret
 
     def call_tool(self, name: str, arguments: dict, request_id: str) -> dict:
         """Returns the tool's JSON payload. Raises AxxessError on any failure."""
@@ -96,11 +97,15 @@ class AxxessMcpClient:
             "method": "tools/call",
             "params": {"name": name, "arguments": arguments},
         }).encode()
-        request = urllib.request.Request(self.url, data=body, method="POST", headers={
+        headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json, text/event-stream",
-        })
+        }
+        # Staging only: passes Vercel's deployment protection. Production never configures it.
+        if self.bypass_secret:
+            headers["x-vercel-protection-bypass"] = self.bypass_secret
+        request = urllib.request.Request(self.url, data=body, method="POST", headers=headers)
         try:
             with urllib.request.urlopen(request, timeout=self.timeout) as response:
                 reply = json.loads(response.read().decode())
