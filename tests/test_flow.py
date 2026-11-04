@@ -27,6 +27,10 @@ def rule_pattern(name="AxxessLeadRule"):
 
 def matches(pattern, event):
     for key, expected in pattern.items():
+        if key == "$or":
+            if not any(matches(option, event) for option in expected):
+                return False
+            continue
         if key not in event:
             return False
         if isinstance(expected, dict):
@@ -102,7 +106,7 @@ def test_redelivery_does_not_create_a_second_task(wired):
     assert len(axxess["requests"]) == 1
 
 
-@pytest.mark.parametrize("overrides", [{"category": "scam"}, {"category": "routine"}, {"needs_decision": False}])
+@pytest.mark.parametrize("overrides", [{"category": "scam"}, {"category": "routine"}, {"category": "important", "needs_decision": False}])
 def test_rule_filters_out_items_that_do_not_need_the_founder(wired, overrides):
     deliver, axxess, _ = wired
     assert deliver(lead_data(**overrides)) is None
