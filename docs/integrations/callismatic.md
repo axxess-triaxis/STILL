@@ -46,3 +46,22 @@ def _publish_to_still(source_name: str, caller_number: str, triage: CallTriage) 
 - Set Lambda env var `STILL_EVENT_BUS_ARN` to the stack output `EventBusArn`. The bus is
   in ap-southeast-2; the emitter calls that region directly from us-east-1.
 - Rollback: remove the env var. The emitter becomes a no-op without a redeploy.
+
+## Voice-agent call results (`call.completed.v1`, 2026-11-13)
+
+AXXESS's "Call with agent" button sends one job to Callismatic (`POST /api/outbound-calls`). When the
+call ends, Callismatic emits `triaxis.callismatic` / `call.completed.v1` (schema in
+`src/still/schemas/triaxis.callismatic/call.completed.v1.json`). It carries the job id, outcome,
+summary, action items, an accepted demo slot and an opt-out flag, and never the transcript or the
+phone number.
+
+`AxxessAgentCallRule` sends it to the AXXESS adapter, which calls:
+
+1. `log_agent_call` (auto, idempotent on the job id): records the result, moves the lead on, leaves
+   a follow-up task, and suppresses the number if the contact opted out. The AXXESS connection STILL
+   uses must be granted the opt-in `log_agent_call` capability in AXXESS.
+2. `create_meeting`, only if a demo slot was accepted and the contact did not opt out. It is critical
+   in AXXESS, so it waits for the founder's approval.
+
+No real call can be placed yet: Callismatic has no lead-call provider for India or the UAE, and
+AXXESS's gate refuses agent calls until DLT, TDRA and counsel sign-off are recorded.

@@ -149,6 +149,7 @@ Resources:
                 aws:SourceArn:
                   - !GetAtt AxxessLeadRule.Arn
                   - !GetAtt AxxessCompletionRule.Arn
+                  - !GetAtt AxxessAgentCallRule.Arn
 
   AxxessAdapterFunction:
     Type: AWS::Serverless::Function
@@ -243,6 +244,31 @@ Resources:
       FunctionName: !Ref AxxessAdapterFunction
       Principal: events.amazonaws.com
       SourceArn: !GetAtt AxxessCompletionRule.Arn
+
+  AxxessAgentCallRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Results of voice-agent calls started from AXXESS go back to AXXESS
+      EventBusName: !Ref EventBus
+      EventPattern:
+        source: [triaxis.callismatic]
+        detail-type: [call.completed.v1]
+      Targets:
+        - Id: axxess-adapter
+          Arn: !GetAtt AxxessAdapterFunction.Arn
+          RetryPolicy:
+            MaximumRetryAttempts: 20
+            MaximumEventAgeInSeconds: 3600
+          DeadLetterConfig:
+            Arn: !GetAtt DeliveryDeadLetterQueue.Arn
+
+  AxxessAgentCallInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AxxessAdapterFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt AxxessAgentCallRule.Arn
 
   AlarmTopic:
     Type: AWS::SNS::Topic

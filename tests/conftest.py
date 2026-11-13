@@ -64,7 +64,7 @@ def fake_axxess():
             reply = state["reply"] or {
                 "jsonrpc": "2.0", "id": body["id"],
                 "result": {"content": [{"type": "text", "text": json.dumps(
-                    {"id": f"task-{len(state['requests'])}", "title": body["params"]["arguments"]["title"]})}]},
+                    {"id": f"task-{len(state['requests'])}", "title": body["params"]["arguments"].get("title")})}]},
             }
             data = json.dumps(reply).encode()
             self.send_response(200)

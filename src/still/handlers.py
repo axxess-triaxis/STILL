@@ -43,6 +43,8 @@ def axxess_handler(event: dict, context=None) -> dict:
     ids = {"event_id": env["id"], "source": env["source"], "type": env["type"], "consumer": CONSUMER_AXXESS}
 
     route = (env["source"], env["type"])
+    if route == ("triaxis.callismatic", "call.completed.v1"):
+        return _agent_call_result(env, ids)
     if route == ("triaxis.callismatic", "lead.triaged.v1"):
         if not axxess.wants_task(env["data"]):
             log(outcome="ignored_not_actionable", **ids)
@@ -74,6 +76,40 @@ def axxess_handler(event: dict, context=None) -> dict:
         outcome = f"pending_approval:{payload.get('approvalRequestId')}"
     else:
         outcome = f"task:{payload.get('id')}"
+    store.complete(env["id"], CONSUMER_AXXESS, outcome)
+    log(outcome=outcome, **ids)
+    return {"outcome": outcome}
+
+
+def _agent_call_result(env: dict, ids: dict) -> dict:
+    """An AXXESS "Call with agent" job finished: log it, then ask for the demo meeting if one was
+    accepted. log_agent_call is idempotent on the job id, so a retry after a failed create_meeting
+    does not log the call twice."""
+    store = _idempotency()
+    try:
+        if not store.claim(env["id"], CONSUMER_AXXESS):
+            log(outcome="duplicate", **ids)
+            return {"outcome": "duplicate"}
+    except AlreadyInProgress:
+        log(outcome="in_progress_elsewhere", **ids)
+        raise
+
+    client = _axxess_client()
+    try:
+        client.call_tool("log_agent_call", axxess.agent_call_arguments(env), env["id"])
+        outcome = f"call_logged:{env['data']['status']}"
+        meeting = axxess.demo_meeting_arguments(env)
+        if meeting:
+            payload = client.call_tool("create_meeting", meeting, f"{env['id']}:meeting")
+            if payload.get("status") == "pending_approval":
+                outcome += f",meeting_pending_approval:{payload.get('approvalRequestId')}"
+            else:
+                outcome += f",meeting:{payload.get('id')}"
+    except axxess.AxxessError as error:
+        store.release(env["id"], CONSUMER_AXXESS)
+        log(outcome="failed", retryable=error.retryable, error=str(error), **ids)
+        raise
+
     store.complete(env["id"], CONSUMER_AXXESS, outcome)
     log(outcome=outcome, **ids)
     return {"outcome": outcome}
