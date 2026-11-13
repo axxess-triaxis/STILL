@@ -81,6 +81,47 @@ def completion_task_arguments(envelope: dict) -> dict:
     return {"title": title, "description": "\n".join(lines), "priority": "medium"}
 
 
+def agent_call_arguments(envelope: dict) -> dict:
+    """log_agent_call arguments for a triaxis.callismatic call.completed.v1 envelope (an AXXESS
+    "Call with agent" job). AXXESS records the result, moves the lead on and leaves a follow-up."""
+    data = envelope["data"]
+    if data["status"] == "failed":
+        return {"jobId": data["job_id"], "status": "failed", "failureReason": data.get("failure_reason") or "unknown"}
+    arguments = {
+        "jobId": data["job_id"],
+        "status": "completed",
+        "outcome": data["outcome"],
+        "summary": (data.get("summary") or "").strip(),
+        "actionItems": data["action_items"],
+        "optedOut": data["opted_out"],
+    }
+    if data.get("follow_up_at"):
+        arguments["followUpAt"] = data["follow_up_at"]
+    return arguments
+
+
+def demo_meeting_arguments(envelope: dict) -> dict | None:
+    """create_meeting arguments when the contact accepted a demo slot on the call, else None.
+    create_meeting is critical in AXXESS, so it waits for the founder's approval."""
+    data = envelope["data"]
+    slot = data.get("accepted_slot")
+    if data["status"] != "completed" or not slot or data["opted_out"]:
+        return None
+    title = f"Demo: {data['title'].strip()}"
+    if len(title) > TITLE_LIMIT:
+        title = title[: TITLE_LIMIT - 3].rstrip() + "..."
+    notes = (data.get("summary") or "").strip()
+    return {
+        "title": title,
+        "startsAt": slot["starts_at"],
+        "endsAt": slot["ends_at"],
+        "notes": "\n".join(filter(None, [
+            notes,
+            f"Booked by the voice agent on AXXESS agent call job {data['job_id']}. STILL event {envelope['id']}.",
+        ])),
+    }
+
+
 class AxxessMcpClient:
     def __init__(self, url: str, api_key: str, timeout: float = 20.0, bypass_secret: str | None = None):
         if not url.startswith("https://") and not url.startswith("http://127.0.0.1"):

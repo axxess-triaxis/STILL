@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://still.triaxisventures.com/schemas/triaxis.callismatic/call.completed.v1.json",
+  "title": "Callismatic: a voice-agent call requested from AXXESS finished",
+  "description": "data of a triaxis.callismatic call.completed.v1 event (callismatic/outbound.py). One per AXXESS agent call job. Never carries the transcript or the phone number.",
+  "type": "object",
+  "required": ["job_id", "lead_id", "organization_id", "title", "status", "outcome", "summary", "action_items", "accepted_slot", "follow_up_at", "opted_out", "failure_reason"],
+  "additionalProperties": false,
+  "properties": {
+    "job_id": {"type": "string", "format": "uuid", "description": "AXXESS agent_call_jobs.id; log_agent_call is idempotent on it."},
+    "lead_id": {"type": "string", "format": "uuid"},
+    "organization_id": {"type": "string", "format": "uuid"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 200, "description": "The AXXESS lead title, for the demo meeting's name."},
+    "status": {"enum": ["completed", "failed"]},
+    "outcome": {"enum": ["connected", "no_answer", "voicemail", "wrong_number", "call_back", "not_interested", "interested", null]},
+    "summary": {"type": ["string", "null"], "maxLength": 1000},
+    "action_items": {"type": "array", "maxItems": 10, "items": {"type": "string", "maxLength": 300}},
+    "accepted_slot": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["starts_at", "ends_at"],
+          "additionalProperties": false,
+          "properties": {
+            "starts_at": {"type": "string", "format": "date-time"},
+            "ends_at": {"type": "string", "format": "date-time"}
+          }
+        }
+      ]
+    },
+    "follow_up_at": {"type": ["string", "null"], "format": "date-time"},
+    "opted_out": {"type": "boolean"},
+    "failure_reason": {"type": ["string", "null"], "maxLength": 200}
+  },
+  "allOf": [
+    {"if": {"properties": {"status": {"const": "completed"}}}, "then": {"properties": {"outcome": {"type": "string"}}}}
+  ]
+}
