@@ -233,3 +233,79 @@ def test_invalid_completion_is_rejected(completion):
     with pytest.raises(InvalidEvent):
         deliver(completion_data(channel="fax"))
     assert axxess["requests"] == []
+
+
+# --- Automation plan Phase 2 (2026-11-16): Callismatic leads into the AXXESS CRM -------------------
+
+LEAD_ID = "11111111-2222-3333-4444-555555555555"
+
+
+@pytest.fixture
+def lead_sync(wired, monkeypatch):
+    monkeypatch.setenv("STILL_AXXESS_LEAD_SYNC", "true")
+    deliver, axxess, store = wired
+    axxess["by_tool"]["upsert_lead"] = {"leadId": LEAD_ID, "created": True, "changed": [], "stage": "new", "status": "open"}
+    axxess["by_tool"]["log_conversation"] = {"leadId": LEAD_ID, "conversationId": "conv-1", "duplicate": False}
+    return deliver, axxess, store
+
+
+def tools_called(axxess):
+    return [request["body"]["params"]["name"] for request in axxess["requests"]]
+
+
+def test_lead_sync_is_off_by_default(wired):
+    deliver, axxess, _ = wired
+    assert deliver(lead_data()) == {"outcome": "task:task-1"}
+    assert tools_called(axxess) == ["create_task"]
+
+
+def test_lead_becomes_a_crm_lead_with_the_message_on_its_history_then_a_task(lead_sync, capsys):
+    deliver, axxess, _ = lead_sync
+    outcome = deliver(lead_data(key_facts={"Name": "Daniel Ortiz", "company": "Ortiz Builders", "project": "kitchen remodel"}))
+    assert tools_called(axxess) == ["upsert_lead", "log_conversation", "create_task"]
+    assert outcome["outcome"].startswith(f"lead:{LEAD_ID},task:")
+    upsert, conversation, task = (request["body"]["params"]["arguments"] for request in axxess["requests"])
+    assert upsert == {"phoneE164": "+15550001111", "source": "callismatic_text", "contactName": "Daniel Ortiz", "organizationName": "Ortiz Builders"}
+    assert conversation["leadId"] == LEAD_ID
+    assert conversation["channel"] == "sms" and conversation["direction"] == "inbound" and conversation["source"] == "callismatic"
+    assert conversation["externalId"] == "callismatic:msg-0001"
+    assert conversation["occurredAt"] == "2026-10-28T10:00:00Z"
+    assert "kitchen remodel" in conversation["summary"]
+    assert f"AXXESS lead: {LEAD_ID}" in task["description"]
+    assert "+15550001111" not in capsys.readouterr().out
+
+
+def test_important_items_and_items_without_a_callable_number_stay_task_only(lead_sync):
+    deliver, axxess, _ = lead_sync
+    deliver(lead_data(category="important"), key="a")
+    data = lead_data()
+    data["caller_number"] = "unknown"
+    deliver(data, key="b")
+    assert tools_called(axxess) == ["create_task", "create_task"]
+
+
+def test_missing_capability_or_older_axxess_still_creates_the_task(lead_sync):
+    deliver, axxess, _ = lead_sync
+    axxess["by_tool"]["upsert_lead"] = {"error": {"code": -32001, "message": "This agent connection does not have the upsert_lead capability."}}
+    assert deliver(lead_data())["outcome"].startswith("task:")
+    assert tools_called(axxess) == ["upsert_lead", "create_task"]
+
+
+def test_a_failed_task_after_the_lead_is_retried_without_losing_the_event(lead_sync):
+    deliver, axxess, store = lead_sync
+    axxess["by_tool"]["create_task"] = {"error": {"code": -32603, "message": "handler exploded"}}
+    with pytest.raises(AxxessError):
+        deliver(lead_data())
+    assert store.items == {}
+    del axxess["by_tool"]["create_task"]
+    assert deliver(lead_data())["outcome"].startswith(f"lead:{LEAD_ID},task:")
+    assert tools_called(axxess).count("upsert_lead") == 2
+
+
+def test_a_tool_refusal_on_the_lead_is_not_swallowed(lead_sync):
+    deliver, axxess, store = lead_sync
+    axxess["by_tool"]["log_conversation"] = {"error": {"code": -32602, "message": "summary is required."}}
+    with pytest.raises(AxxessError):
+        deliver(lead_data())
+    assert "create_task" not in tools_called(axxess)
+    assert store.items == {}

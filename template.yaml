@@ -16,6 +16,11 @@ Parameters:
     Type: String
     Description: HTTPS URL of the AXXESS MCP endpoint, ending in /api/agents/mcp
     AllowedPattern: "^https://.+/api/agents/mcp$"
+  AxxessLeadSync:
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+    Description: Phase 2 - also record Callismatic leads in the AXXESS CRM (upsert_lead, log_conversation). Turn on only after the STILL key has those capabilities in AXXESS.
   AlarmEmail:
     Type: String
     Default: ""
@@ -162,6 +167,7 @@ Resources:
           AXXESS_API_KEY_SECRET_ARN: !Ref AxxessApiKeySecret
           AXXESS_BYPASS_SECRET_ARN: !If [IsStaging, !Ref AxxessBypassSecret, !Ref AWS::NoValue]
           STILL_IDEMPOTENCY_TABLE: !Ref IdempotencyTable
+          STILL_AXXESS_LEAD_SYNC: !Ref AxxessLeadSync
       Policies:
         - Version: "2012-10-17"
           Statement:

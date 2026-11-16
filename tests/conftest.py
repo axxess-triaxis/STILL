@@ -50,7 +50,8 @@ def lead_data(**triage_overrides):
 @pytest.fixture
 def fake_axxess():
     """A local stand-in for AXXESS POST /api/agents/mcp that records requests."""
-    state = {"requests": [], "reply": None, "status": 200}
+    # by_tool: tool name -> payload dict, or {"error": {"code": ..., "message": ...}} for a JSON-RPC error.
+    state = {"requests": [], "reply": None, "status": 200, "by_tool": {}}
 
     class Handler(BaseHTTPRequestHandler):
         def do_POST(self):
@@ -60,6 +61,19 @@ def fake_axxess():
             if state["status"] != 200:
                 self.send_response(state["status"])
                 self.end_headers()
+                return
+            tool = body.get("params", {}).get("name")
+            if tool in state["by_tool"]:
+                entry = state["by_tool"][tool]
+                state["reply"] = None
+                reply = ({"jsonrpc": "2.0", "id": body["id"], "error": entry["error"]} if "error" in entry else
+                         {"jsonrpc": "2.0", "id": body["id"], "result": {"content": [{"type": "text", "text": json.dumps(entry)}]}})
+                data = json.dumps(reply).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
                 return
             reply = state["reply"] or {
                 "jsonrpc": "2.0", "id": body["id"],

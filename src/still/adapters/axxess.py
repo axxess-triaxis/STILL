@@ -8,17 +8,92 @@ pending_approval instead of running; create_task is auto.
 from __future__ import annotations
 
 import json
+import os
+import re
 import urllib.error
 import urllib.request
 
 PRIORITY_BY_URGENCY = {"high": "high", "medium": "medium", "low": "low", "none": "low"}
 TITLE_LIMIT = 200
 
+# Automation plan Phase 2 (2026-11-16): Callismatic leads become AXXESS CRM leads through the lead
+# context tools (upsert_lead, log_conversation), not only tasks. Off unless this is "true", so STILL can
+# be deployed before AXXESS has the tools and before STILL's key is granted them.
+LEAD_SYNC_ENV = "STILL_AXXESS_LEAD_SYNC"
+# JSON-RPC codes that mean "this AXXESS or this key cannot do lead sync yet": the task still goes out.
+LEAD_SYNC_UNAVAILABLE_CODES = {-32001, -32601}
+SUMMARY_LIMIT = 2000
+E164 = re.compile(r"^\+[1-9]\d{6,14}$")
+CONVERSATION_CHANNEL = {"voicemail": "voice", "sms": "sms", "whatsapp": "whatsapp", "text": "sms", "unknown": "other"}
+NAME_KEYS = ("name", "caller_name", "contact_name", "full_name")
+COMPANY_KEYS = ("company", "business", "organization", "organisation", "company_name")
+EMAIL_KEYS = ("email", "email_address")
+
 
 class AxxessError(RuntimeError):
-    def __init__(self, message: str, *, retryable: bool):
+    def __init__(self, message: str, *, retryable: bool, code: int | None = None):
         super().__init__(message)
         self.retryable = retryable
+        self.code = code
+
+
+def lead_sync_enabled() -> bool:
+    return os.environ.get(LEAD_SYNC_ENV, "").strip().lower() == "true"
+
+
+def _first_fact(facts: dict, keys: tuple[str, ...]) -> str | None:
+    lowered = {k.lower(): v for k, v in facts.items()}
+    for key in keys:
+        value = (lowered.get(key) or "").strip()
+        if value:
+            return value
+    return None
+
+
+def lead_upsert_arguments(envelope: dict) -> dict | None:
+    """upsert_lead arguments for a Callismatic lead with a callable number, else None.
+    Only category "lead": an "important" item is often a supplier or a bank, not a buyer."""
+    data = envelope["data"]
+    triage = data["triage"]
+    number = (data.get("caller_number") or "").strip()
+    if triage["category"] != "lead" or not E164.match(number):
+        return None
+    facts = triage["key_facts"]
+    arguments = {"phoneE164": number, "source": f"callismatic_{data.get('channel') or 'unknown'}"}
+    name = _first_fact(facts, NAME_KEYS)
+    company = _first_fact(facts, COMPANY_KEYS)
+    email = _first_fact(facts, EMAIL_KEYS)
+    if name:
+        arguments["contactName"] = name[:200]
+    if company:
+        arguments["organizationName"] = company[:200]
+    if email and "@" in email:
+        arguments["email"] = email
+    return arguments
+
+
+def conversation_arguments(envelope: dict, lead_id: str) -> dict:
+    """log_conversation arguments: the triaged message, on the lead's history. externalId makes a retry
+    a no-op in AXXESS."""
+    data = envelope["data"]
+    triage = data["triage"]
+    lines = [triage["summary"].strip()]
+    if triage["key_facts"]:
+        lines.extend(f"- {k}: {v}" for k, v in triage["key_facts"].items())
+    if triage.get("suggested_action"):
+        lines.append(f"Suggested next step: {triage['suggested_action'].strip()}")
+    summary = "\n".join(lines)
+    if len(summary) > SUMMARY_LIMIT:
+        summary = summary[: SUMMARY_LIMIT - 3].rstrip() + "..."
+    return {
+        "leadId": lead_id,
+        "channel": CONVERSATION_CHANNEL.get(data.get("channel") or "unknown", "other"),
+        "direction": "inbound",
+        "source": "callismatic",
+        "externalId": f"callismatic:{data['source_ref']}"[:200],
+        "summary": summary,
+        "occurredAt": data["triaged_at"],
+    }
 
 
 def wants_task(data: dict) -> bool:
@@ -28,7 +103,7 @@ def wants_task(data: dict) -> bool:
     return triage["category"] == "lead" or (triage["category"] == "important" and triage["needs_decision"] is True)
 
 
-def task_arguments(envelope: dict) -> dict:
+def task_arguments(envelope: dict, lead_id: str | None = None) -> dict:
     """create_task arguments for a triaxis.callismatic lead.triaged.v1 envelope."""
     data = envelope["data"]
     triage = data["triage"]
@@ -43,6 +118,8 @@ def task_arguments(envelope: dict) -> dict:
     if triage["key_facts"]:
         lines.append("Key facts:")
         lines.extend(f"- {k}: {v}" for k, v in triage["key_facts"].items())
+    if lead_id:
+        lines.append(f"AXXESS lead: {lead_id} (history on the Leads page).")
     lines.append(
         f"From Callismatic ({triage['category']}, {data.get('channel', 'unknown')}) "
         f"item {data['source_ref']}, triaged {data['triaged_at']}. STILL event {envelope['id']}."
@@ -164,7 +241,7 @@ class AxxessMcpClient:
             code = reply["error"].get("code")
             # -32603 is a handler exception on the AXXESS side; the rest are caller errors.
             raise AxxessError(f"AXXESS MCP error {code}: {reply['error'].get('message')}",
-                              retryable=code == -32603)
+                              retryable=code == -32603, code=code)
         result = reply.get("result") or {}
         text = (result.get("content") or [{}])[0].get("text", "")
         if result.get("isError"):

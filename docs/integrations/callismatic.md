@@ -65,3 +65,24 @@ phone number.
 
 No real call can be placed yet: Callismatic has no lead-call provider for India or the UAE, and
 AXXESS's gate refuses agent calls until DLT, TDRA and counsel sign-off are recorded.
+
+## Leads into the AXXESS CRM (`lead.triaged.v1`, automation plan Phase 2, 2026-11-16)
+
+Founder, 2026-11-16: "Callismatic currently does CRM through Google Sheets. We need it connected to AXXESS CRM and agent."
+
+When `STILL_AXXESS_LEAD_SYNC` is `true` (template parameter `AxxessLeadSync`, default `false`), a `lead.triaged.v1` event in category `lead` with an E.164 `caller_number` becomes, in order:
+1. `upsert_lead`: AXXESS matches the lead by phone, or creates it. The source is `callismatic_<channel>`. The name, company and email come from the triage key facts when present.
+2. `log_conversation`: the triaged message goes on the lead's history. `externalId` is `callismatic:<source_ref>`, so a retry is not stored twice.
+3. `create_task`: unchanged, but its description now names the AXXESS lead.
+
+Some events stay task-only, exactly as before:
+- `important` items;
+- items with no callable number;
+- any event while AXXESS answers `-32001` (the key lacks the capability) or `-32601` (an older AXXESS without the tool).
+
+Turn-on order:
+1. Deploy AXXESS with the lead context tools, and apply `20261116120000_lead_conversations.sql`.
+2. Grant STILL's agent connection `upsert_lead` and `log_conversation`.
+3. Deploy STILL with `AxxessLeadSync=true`, staging first.
+
+Callismatic's Google Sheet sync is unchanged. It stays an optional mirror until the founder retires it.
