@@ -96,6 +96,58 @@ def conversation_arguments(envelope: dict, lead_id: str) -> dict:
     }
 
 
+OMNIDAMUS_CHANNEL = {"sms_rcs": "sms", "whatsapp": "whatsapp", "email": "email"}
+
+
+def omnidamus_lead_upsert_arguments(envelope: dict) -> dict | None:
+    """Phase 3 (2026-11-16): upsert_lead arguments for an Omnidamus completed conversation, or None when
+    the customer has neither a valid E.164 number nor an email. Everyone Omnidamus talks to wrote to us
+    or was started on purpose, so there is no category filter as for Callismatic."""
+    data = envelope["data"]
+    phone = (data.get("customer_phone") or "").strip()
+    email = (data.get("customer_email") or "").strip()
+    has_phone = bool(E164.match(phone))
+    has_email = "@" in email
+    if not has_phone and not has_email:
+        return None
+    arguments = {"source": f"omnidamus_{data['channel']}"}
+    if has_phone:
+        arguments["phoneE164"] = phone
+    if has_email:
+        arguments["email"] = email
+    facts = data.get("key_facts") or {}
+    name = _first_fact(facts, NAME_KEYS)
+    company = _first_fact(facts, COMPANY_KEYS)
+    if name:
+        arguments["contactName"] = name[:200]
+    if company:
+        arguments["organizationName"] = company[:200]
+    return arguments
+
+
+def omnidamus_conversation_arguments(envelope: dict, lead_id: str) -> dict:
+    """log_conversation arguments for an Omnidamus completed conversation. The externalId is the STILL
+    event id: stable across redeliveries, and it carries no phone number."""
+    data = envelope["data"]
+    lines = [data["summary"].strip()]
+    if data.get("key_facts"):
+        lines.extend(f"- {k}: {v}" for k, v in data["key_facts"].items())
+    if data.get("context"):
+        lines.append(f"Why the conversation was opened: {data['context'].strip()}")
+    summary = "\n".join(lines)
+    if len(summary) > SUMMARY_LIMIT:
+        summary = summary[: SUMMARY_LIMIT - 3].rstrip() + "..."
+    return {
+        "leadId": lead_id,
+        "channel": OMNIDAMUS_CHANNEL.get(data["channel"], "other"),
+        "direction": "inbound",
+        "source": "omnidamus",
+        "externalId": f"omnidamus:{envelope['id']}",
+        "summary": summary,
+        "occurredAt": data["completed_at"],
+    }
+
+
 def wants_task(data: dict) -> bool:
     triage = data["triage"]
     # Every lead becomes a task: the model often leaves needs_decision false on a real buyer,
@@ -131,7 +183,7 @@ def task_arguments(envelope: dict, lead_id: str | None = None) -> dict:
     }
 
 
-def completion_task_arguments(envelope: dict) -> dict:
+def completion_task_arguments(envelope: dict, lead_id: str | None = None) -> dict:
     """create_task arguments for a triaxis.omnidamus conversation.completed.v1 envelope."""
     data = envelope["data"]
     # The facts (e.g. demo_time) are what the founder acts on, so they lead the title.
@@ -151,6 +203,8 @@ def completion_task_arguments(envelope: dict) -> dict:
         lines.append("Key facts:")
         lines.extend(f"- {k}: {v}" for k, v in data["key_facts"].items())
     lines.append(f"Receipt email sent: {'yes' if data['receipt_sent'] else 'no'}")
+    if lead_id:
+        lines.append(f"AXXESS lead: {lead_id} (history on the Leads page).")
     lines.append(
         f"From Omnidamus conversation {data['conversation_id']} (closed on {data['channel']}, "
         f"{data['completed_at']}). STILL event {envelope['id']}."
