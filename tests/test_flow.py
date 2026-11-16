@@ -309,3 +309,59 @@ def test_a_tool_refusal_on_the_lead_is_not_swallowed(lead_sync):
         deliver(lead_data())
     assert "create_task" not in tools_called(axxess)
     assert store.items == {}
+
+
+@pytest.fixture
+def omnidamus_lead_sync(completion, monkeypatch):
+    monkeypatch.setenv("STILL_AXXESS_LEAD_SYNC", "true")
+    deliver, axxess = completion
+    axxess["by_tool"]["upsert_lead"] = {"leadId": LEAD_ID, "created": True, "changed": [], "stage": "new", "status": "open"}
+    axxess["by_tool"]["log_conversation"] = {"leadId": LEAD_ID, "conversationId": "conv-2", "duplicate": False}
+    return deliver, axxess
+
+
+def test_omnidamus_completion_becomes_a_lead_with_the_conversation_then_a_task(omnidamus_lead_sync, capsys):
+    deliver, axxess = omnidamus_lead_sync
+    outcome = deliver(completion_data(key_facts={"demo_time": "tomorrow, 6 pm IST", "name": "Asha Rao", "company": "Rao Clinics"}))
+    assert outcome["outcome"].startswith(f"lead:{LEAD_ID},task:")
+    assert tools_called(axxess) == ["upsert_lead", "log_conversation", "create_task"]
+    upsert, conversation, task = (request["body"]["params"]["arguments"] for request in axxess["requests"])
+    assert upsert == {"source": "omnidamus_whatsapp", "phoneE164": "+15550002222", "email": "cust@example.com",
+                      "contactName": "Asha Rao", "organizationName": "Rao Clinics"}
+    assert conversation["channel"] == "whatsapp" and conversation["direction"] == "inbound"
+    assert conversation["source"] == "omnidamus"
+    assert conversation["externalId"].startswith("omnidamus:") and "+1555" not in conversation["externalId"]
+    assert conversation["occurredAt"] == "2026-10-28T16:28:12Z"
+    assert "Demo confirmed" in conversation["summary"]
+    assert "Why the conversation was opened: Inbound lead" in conversation["summary"]
+    assert f"AXXESS lead: {LEAD_ID}" in task["description"]
+    out = capsys.readouterr().out
+    assert "+1555" not in out and "cust@" not in out
+
+
+def test_omnidamus_email_only_customer_is_still_a_lead(omnidamus_lead_sync):
+    deliver, axxess = omnidamus_lead_sync
+    deliver(completion_data(channel="email", customer_phone="unknown"))
+    upsert, conversation = (request["body"]["params"]["arguments"] for request in axxess["requests"][:2])
+    assert upsert == {"source": "omnidamus_email", "email": "cust@example.com"}
+    assert conversation["channel"] == "email"
+
+
+def test_omnidamus_without_any_contact_stays_task_only(omnidamus_lead_sync):
+    deliver, axxess = omnidamus_lead_sync
+    deliver(completion_data(customer_phone="unknown", customer_email=None))
+    assert tools_called(axxess) == ["create_task"]
+
+
+def test_omnidamus_sms_rcs_is_logged_as_sms_and_a_redelivery_is_a_duplicate(omnidamus_lead_sync):
+    deliver, axxess = omnidamus_lead_sync
+    deliver(completion_data(channel="sms_rcs"))
+    assert deliver(completion_data(channel="sms_rcs")) == {"outcome": "duplicate"}
+    assert axxess["requests"][1]["body"]["params"]["arguments"]["channel"] == "sms"
+    assert tools_called(axxess) == ["upsert_lead", "log_conversation", "create_task"]
+
+
+def test_omnidamus_with_lead_sync_off_stays_task_only(completion):
+    deliver, axxess = completion
+    deliver(completion_data())
+    assert tools_called(axxess) == ["create_task"]
