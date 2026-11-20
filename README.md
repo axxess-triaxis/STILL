@@ -93,6 +93,27 @@ instead, and STILL records that.
 STILL's logs hold ids and outcomes only, never names, numbers or message text (a test
 checks this).
 
+## Customer jobs: results go to the organization that started them (built 2026-11-20, off)
+
+Until now the AXXESS adapter used one agent API key, which belongs to the Triaxis organization, so every
+result landed there. For customers, a result for a job that AXXESS started goes to
+`POST /api/stack/results` on AXXESS instead (AXXESSTRIAXIS PR #555). AXXESS reads the organization from
+its own job record and refuses an unknown job, a mismatched organization or a product that is off.
+
+- **Which events take the new path:**
+  - a Callismatic `call.completed.v1` (every one carries `job_id`)
+  - an Omnidamus `conversation.completed.v1` that carries the new optional `job_id`
+
+  Events without a job, such as Triaxis's own inbound calls and messages, keep the agent key path unchanged.
+- **Off by default.** It turns on when both template parameters are set: `AxxessStackResultsUrl` and
+  `StackResultsSecretArn` (a Secrets Manager secret holding AXXESS's `STACK_RESULTS_SECRET`). A rule
+  refuses a deploy with only one of them.
+- **No fallback to the Triaxis key.** A job-tagged conversation is refused (sent to the failure queue)
+  while the route is off, so a customer's result never lands in Triaxis's organization.
+- **What is sent:** the customer's phone and email are left out; AXXESS's lead already holds them.
+- **Not done yet:** a demo slot accepted on a routed call is reported as `meeting_not_booked`. Booking it
+  needs approval inside the job's organization, which the AXXESS route does not do yet.
+
 ## Event envelope
 
 Every event's EventBridge `detail` is a CloudEvents-style envelope

@@ -20,11 +20,22 @@ Parameters:
     Type: String
     Default: ""
     Description: Optional email for alarm notifications (left empty, alarms go nowhere)
+  AxxessStackResultsUrl:
+    Type: String
+    Default: ""
+    Description: Optional HTTPS URL of AXXESS POST /api/stack/results. Empty keeps job results on the agent key path
+    AllowedPattern: "^(https://.+/api/stack/results)?$"
+  StackResultsSecretArn:
+    Type: String
+    Default: ""
+    Description: Optional ARN of the Secrets Manager secret holding STACK_RESULTS_SECRET. Needed with AxxessStackResultsUrl
+    AllowedPattern: "^(arn:aws:secretsmanager:[a-z0-9-]+:[0-9]{12}:secret:.+)?$"
 
 Conditions:
   HasAlarmEmail: !Not [!Equals [!Ref AlarmEmail, ""]]
   IsProd: !Equals [!Ref Stage, prod]
   IsStaging: !Equals [!Ref Stage, staging]
+  HasStackResults: !Not [!Equals [!Ref StackResultsSecretArn, ""]]
 
 # Stops a staging stack being deployed against a production AXXESS endpoint, where
 # test events would create real tasks.
@@ -40,6 +51,20 @@ Rules:
                   - https://lite.triaxisventures.com/api/agents/mcp
                 - !Ref AxxessMcpUrl
         AssertDescription: A staging stack must not use a production AXXESS MCP URL
+      - Assert:
+          Fn::Not:
+            - Fn::Contains:
+                - - https://landing.triaxisventures.com/api/stack/results
+                  - https://investor.triaxisventures.com/api/stack/results
+                  - https://lite.triaxisventures.com/api/stack/results
+                - !Ref AxxessStackResultsUrl
+        AssertDescription: A staging stack must not use a production AXXESS stack results URL
+  StackResultsNeedsBothValues:
+    Assertions:
+      - Assert: !Or
+          - !And [!Equals [!Ref AxxessStackResultsUrl, ""], !Equals [!Ref StackResultsSecretArn, ""]]
+          - !And [!Not [!Equals [!Ref AxxessStackResultsUrl, ""]], !Not [!Equals [!Ref StackResultsSecretArn, ""]]]
+        AssertDescription: Set AxxessStackResultsUrl and StackResultsSecretArn together, or neither
 
 Globals:
   Function:
@@ -161,6 +186,8 @@ Resources:
           AXXESS_MCP_URL: !Ref AxxessMcpUrl
           AXXESS_API_KEY_SECRET_ARN: !Ref AxxessApiKeySecret
           AXXESS_BYPASS_SECRET_ARN: !If [IsStaging, !Ref AxxessBypassSecret, !Ref AWS::NoValue]
+          AXXESS_STACK_RESULTS_URL: !Ref AxxessStackResultsUrl
+          STACK_RESULTS_SECRET_ARN: !Ref StackResultsSecretArn
           STILL_IDEMPOTENCY_TABLE: !Ref IdempotencyTable
       Policies:
         - Version: "2012-10-17"
@@ -171,6 +198,12 @@ Resources:
                 - IsStaging
                 - [!Ref AxxessApiKeySecret, !Ref AxxessBypassSecret]
                 - [!Ref AxxessApiKeySecret]
+            - !If
+              - HasStackResults
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref StackResultsSecretArn
+              - !Ref AWS::NoValue
             - Effect: Allow
               Action: [dynamodb:PutItem, dynamodb:UpdateItem, dynamodb:DeleteItem]
               Resource: !GetAtt IdempotencyTable.Arn

@@ -61,6 +61,15 @@ def fake_axxess():
                 self.send_response(state["status"])
                 self.end_headers()
                 return
+            if "params" not in body:
+                # POST /api/stack/results (stack org routing): not JSON-RPC.
+                data = json.dumps(state["reply"] or {"filed": True, "taskId": f"task-{len(state['requests'])}"}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+                return
             reply = state["reply"] or {
                 "jsonrpc": "2.0", "id": body["id"],
                 "result": {"content": [{"type": "text", "text": json.dumps(

@@ -38,13 +38,41 @@ def _axxess_client() -> axxess.AxxessMcpClient:
     return _cache["axxess"]
 
 
+def _results_client() -> axxess.AxxessResultsClient | None:
+    """The AXXESS stack results route (2026-11-20), or None while it is not configured.
+    Off by default: both AXXESS_STACK_RESULTS_URL and STACK_RESULTS_SECRET_ARN must be set."""
+    if "results" not in _cache:
+        url = os.environ.get("AXXESS_STACK_RESULTS_URL", "").strip()
+        secret_arn = os.environ.get("STACK_RESULTS_SECRET_ARN", "").strip()
+        if not url or not secret_arn:
+            _cache["results"] = None
+        else:
+            import boto3
+
+            secrets = boto3.client("secretsmanager")
+            secret = secrets.get_secret_value(SecretId=secret_arn)["SecretString"].strip()
+            bypass_arn = os.environ.get("AXXESS_BYPASS_SECRET_ARN")
+            bypass = secrets.get_secret_value(SecretId=bypass_arn)["SecretString"].strip() if bypass_arn else None
+            _cache["results"] = axxess.AxxessResultsClient(url, secret, bypass_secret=bypass)
+    return _cache["results"]
+
+
 def axxess_handler(event: dict, context=None) -> dict:
     env = envelopes.from_eventbridge(event)
     ids = {"event_id": env["id"], "source": env["source"], "type": env["type"], "consumer": CONSUMER_AXXESS}
 
     route = (env["source"], env["type"])
     if route == ("triaxis.callismatic", "call.completed.v1"):
+        if _results_client() is not None:
+            return _routed_result(env, ids)
         return _agent_call_result(env, ids)
+    if route == ("triaxis.omnidamus", "conversation.completed.v1") and env["data"].get("job_id"):
+        # Started by an AXXESS job, possibly for a customer: never file it with the Tenant 0 key.
+        if _results_client() is None:
+            log(outcome="refused_results_route_not_configured", **ids)
+            raise axxess.AxxessError("A job result needs the AXXESS stack results route, which is not configured",
+                                     retryable=False)
+        return _routed_result(env, ids)
     if route == ("triaxis.callismatic", "lead.triaged.v1"):
         if not axxess.wants_task(env["data"]):
             log(outcome="ignored_not_actionable", **ids)
@@ -110,6 +138,38 @@ def _agent_call_result(env: dict, ids: dict) -> dict:
         log(outcome="failed", retryable=error.retryable, error=str(error), **ids)
         raise
 
+    store.complete(env["id"], CONSUMER_AXXESS, outcome)
+    log(outcome=outcome, **ids)
+    return {"outcome": outcome}
+
+
+def _routed_result(env: dict, ids: dict) -> dict:
+    """A result for a job that AXXESS started: AXXESS files it into the organization that owns
+    the job. The route is idempotent per job, and STILL's claim stops duplicate deliveries here."""
+    store = _idempotency()
+    try:
+        if not store.claim(env["id"], CONSUMER_AXXESS):
+            log(outcome="duplicate", **ids)
+            return {"outcome": "duplicate"}
+    except AlreadyInProgress:
+        log(outcome="in_progress_elsewhere", **ids)
+        raise
+
+    try:
+        reply = _results_client().file_result(axxess.results_payload(env))
+    except axxess.AxxessError as error:
+        store.release(env["id"], CONSUMER_AXXESS)
+        log(outcome="failed", retryable=error.retryable, error=str(error), **ids)
+        raise
+
+    outcome = "routed:already_logged" if reply.get("alreadyLogged") else f"routed:{reply.get('status') or 'filed'}"
+    if reply.get("taskId"):
+        outcome += f",task:{reply['taskId']}"
+    data = env["data"]
+    # Booking the demo meeting needs approval in the job's organization; the results route does not
+    # do that yet, so say so instead of booking it in the wrong organization.
+    if env["type"] == "call.completed.v1" and data.get("accepted_slot") and not data.get("opted_out"):
+        outcome += ",meeting_not_booked"
     store.complete(env["id"], CONSUMER_AXXESS, outcome)
     log(outcome=outcome, **ids)
     return {"outcome": outcome}
