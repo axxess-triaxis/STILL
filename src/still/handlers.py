@@ -49,6 +49,8 @@ def axxess_handler(event: dict, context=None) -> dict:
         if not axxess.wants_task(env["data"]):
             log(outcome="ignored_not_actionable", **ids)
             return {"outcome": "ignored"}
+        if axxess.lead_sync_enabled():
+            return _callismatic_lead(env, ids)
         arguments = axxess.task_arguments
     elif route == ("triaxis.omnidamus", "conversation.completed.v1"):
         arguments = axxess.completion_task_arguments
@@ -76,6 +78,55 @@ def axxess_handler(event: dict, context=None) -> dict:
         outcome = f"pending_approval:{payload.get('approvalRequestId')}"
     else:
         outcome = f"task:{payload.get('id')}"
+    store.complete(env["id"], CONSUMER_AXXESS, outcome)
+    log(outcome=outcome, **ids)
+    return {"outcome": outcome}
+
+
+def _sync_lead(client: axxess.AxxessMcpClient, env: dict, ids: dict) -> str | None:
+    """Phase 2: record the caller as an AXXESS lead and the message on its history. Returns the lead id,
+    or None when there is no callable number or AXXESS cannot do lead sync for this key yet."""
+    upsert = axxess.lead_upsert_arguments(env)
+    if upsert is None:
+        return None
+    try:
+        lead = client.call_tool("upsert_lead", upsert, f"{env['id']}:lead")
+        lead_id = lead.get("leadId")
+        if not lead_id:
+            raise axxess.AxxessError("AXXESS upsert_lead returned no leadId", retryable=False)
+        client.call_tool("log_conversation", axxess.conversation_arguments(env, lead_id), f"{env['id']}:conversation")
+    except axxess.AxxessError as error:
+        if error.code in axxess.LEAD_SYNC_UNAVAILABLE_CODES:
+            log(outcome="lead_sync_unavailable", code=error.code, **ids)
+            return None
+        raise
+    return lead_id
+
+
+def _callismatic_lead(env: dict, ids: dict) -> dict:
+    """A Callismatic lead with lead sync on: upsert the lead, log the message, then the founder's task.
+    upsert_lead matches by phone and log_conversation is idempotent on externalId, so a retry after a
+    failed create_task repeats them without duplicates."""
+    store = _idempotency()
+    try:
+        if not store.claim(env["id"], CONSUMER_AXXESS):
+            log(outcome="duplicate", **ids)
+            return {"outcome": "duplicate"}
+    except AlreadyInProgress:
+        log(outcome="in_progress_elsewhere", **ids)
+        raise
+
+    client = _axxess_client()
+    try:
+        lead_id = _sync_lead(client, env, ids)
+        payload = client.call_tool("create_task", axxess.task_arguments(env, lead_id), env["id"])
+    except axxess.AxxessError as error:
+        store.release(env["id"], CONSUMER_AXXESS)
+        log(outcome="failed", retryable=error.retryable, error=str(error), **ids)
+        raise
+
+    task = f"pending_approval:{payload.get('approvalRequestId')}" if payload.get("status") == "pending_approval" else f"task:{payload.get('id')}"
+    outcome = f"lead:{lead_id},{task}" if lead_id else task
     store.complete(env["id"], CONSUMER_AXXESS, outcome)
     log(outcome=outcome, **ids)
     return {"outcome": outcome}
