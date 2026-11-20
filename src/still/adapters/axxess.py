@@ -173,3 +173,51 @@ class AxxessMcpClient:
             return json.loads(text)
         except json.JSONDecodeError:
             return {"text": text}
+
+
+# Stack org routing (2026-11-20). A result for a job that AXXESS started goes to
+# POST /api/stack/results, where AXXESS files it into the organization that owns the job.
+# The agent API key above belongs to one organization (Triaxis, Tenant 0), so it must never
+# carry a customer's result.
+PERSONAL_FIELDS = ("customer_phone", "customer_email")
+
+
+def results_payload(envelope: dict) -> dict:
+    """Body for /api/stack/results: the event type and its data, minus contact details AXXESS
+    does not need (the lead already holds them)."""
+    data = {k: v for k, v in envelope["data"].items() if k not in PERSONAL_FIELDS}
+    return {"type": envelope["type"], "data": data}
+
+
+class AxxessResultsClient:
+    def __init__(self, url: str, secret: str, timeout: float = 20.0, bypass_secret: str | None = None):
+        if not url.startswith("https://") and not url.startswith("http://127.0.0.1"):
+            raise ValueError("AXXESS stack results URL must be https")
+        self.url = url
+        self.secret = secret
+        self.timeout = timeout
+        self.bypass_secret = bypass_secret
+
+    def file_result(self, payload: dict) -> dict:
+        """Returns AXXESS's JSON reply. Raises AxxessError on any failure."""
+        headers = {"Authorization": f"Bearer {self.secret}", "Content-Type": "application/json"}
+        if self.bypass_secret:
+            headers["x-vercel-protection-bypass"] = self.bypass_secret
+        request = urllib.request.Request(self.url, data=json.dumps(payload).encode(), method="POST", headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=self.timeout) as response:
+                return json.loads(response.read().decode())
+        except urllib.error.HTTPError as error:
+            # 400/401/403/404/409 are refusals (bad event, wrong secret, product off, unknown job,
+            # wrong organization) that a retry will not change; 429 and 5xx may.
+            reason = ""
+            try:
+                reason = json.loads(error.read().decode()).get("error", "")
+            except (ValueError, AttributeError):
+                pass
+            retryable = error.code == 429 or error.code >= 500
+            raise AxxessError(f"AXXESS stack results HTTP {error.code} {reason}".strip(), retryable=retryable) from error
+        except (urllib.error.URLError, TimeoutError) as error:
+            raise AxxessError(f"AXXESS stack results unreachable: {error}", retryable=True) from error
+        except json.JSONDecodeError as error:
+            raise AxxessError("AXXESS stack results returned non-JSON", retryable=True) from error
