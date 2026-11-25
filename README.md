@@ -235,3 +235,6 @@ product.
   interpreter is installed on this machine.
 - The repo is public on GitHub at [axxess-triaxis/STILL](https://github.com/axxess-triaxis/STILL)
   (created 2026-10-29).
+
+<!-- readme-activity:start (generated; edits here are overwritten) -->
+<!-- readme-activity:end -->

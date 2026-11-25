@@ -1,0 +1,17 @@
+name: README activity
+
+on:
+  schedule:
+    - cron: "15 19 * * 0" # weekly, Monday 00:45 IST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency: readme-activity
+
+jobs:
+  refresh:
+    permissions:
+      contents: write # commit the generated README block
+    uses: axxess-triaxis/axxess-triaxis/.github/workflows/repo-readme.yml@main
