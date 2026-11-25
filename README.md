@@ -237,4 +237,13 @@ product.
   (created 2026-10-29).
 
 <!-- readme-activity:start (generated; edits here are overwritten) -->
+## Recent changes
+
+<sub>Generated 2026-11-25 from this repository's history, last 14 days. Documentation, dependency and housekeeping changes are left out.</sub>
+
+| Date | Change |
+|---|---|
+| 2026-11-25 | [Weekly README refresh](https://github.com/axxess-triaxis/STILL/pull/14) |
+| 2026-11-20 | [feat(axxess): send customer job results to the AXXESS stack results route](https://github.com/axxess-triaxis/STILL/pull/13) |
+| 2026-11-13 | [feat(axxess): route call.completed.v1 to log\_agent\_call and create\_meeting](https://github.com/axxess-triaxis/STILL/pull/9) |
 <!-- readme-activity:end -->
